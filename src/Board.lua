@@ -13,15 +13,49 @@
 
 Board = Class{}
 
-function Board:init(x, y)
+function Board:init(x, y, level)
+	-- particles
+	
+	local img = love.graphics.newImage('/graphics/shine.png')
+ 
+	psystem = love.graphics.newParticleSystem(img, 5)
+	-- lasts between 1-1.5 seconds seconds
+    psystem:setParticleLifetime(1,1.5)
+    psystem:setEmissionRate(1.5)
+
+    -- spread of particles; normal looks more natural than uniform
+    psystem:setAreaSpread('uniform', 14, 14)
+    
+    psystem:setSpin( 3, 5 )
+    
+	psystem:setColors(255, 255, 255, 255, 150, 255, 255, 150) -- Fade to transparency.
+	psystem:setSizes(0.3,1,0)
+	
+	-- particles end
+	
     self.x = x
     self.y = y
     self.matches = {}
-
+    self.superMatchesCounter = 0
+    self.level = level or 1
+    
+    self.hint = false
+    
+    -- choose 8 colors for colorSet from 18 total colors, randomly
+    self.colorSet = createColorSet()
+    
     self:initializeTiles()
 end
 
+function Board:update(dt)
+    Timer.update(dt)
+	-- particles
+    psystem:update(dt)
+    -- particles end
+end
+
 function Board:initializeTiles()
+
     self.tiles = {}
 
     for tileY = 1, 8 do
@@ -30,15 +64,20 @@ function Board:initializeTiles()
         table.insert(self.tiles, {})
 
         for tileX = 1, 8 do
-            
             -- create a new tile at X,Y with a random color and variety
-            table.insert(self.tiles[tileY], Tile(tileX, tileY, math.random(18), math.random(6)))
+            table.insert(self.tiles[tileY], generateTileAccordingLevel(tileX, tileY, self.colorSet, self.level))
         end
     end
 
     while self:calculateMatches() do
         
         -- recursively initialize if matches were returned so we always have
+        -- a matchless board on start
+        self:initializeTiles()
+    end
+    
+    while not self:isMatchesExist() do
+    	-- recursively initialize if no chance for matches
         -- a matchless board on start
         self:initializeTiles()
     end
@@ -81,10 +120,22 @@ function Board:calculateMatches()
                         
                         -- add each tile to the match that's in that match
                         table.insert(match, self.tiles[y][x2])
+                        if self.tiles[y][x2].shiny then
+                        	match = {}
+                        	for x3 = 1, 8 do
+                        		self.tiles[y][x3].frozen = true
+                        		table.insert(match, self.tiles[y][x3])
+                        	end
+                        	break
+                        end
                     end
 
                     -- add this match to our total matches table
                     table.insert(matches, match)
+                end
+                
+                if matchNum >= 4 then
+                	self.superMatchesCounter = self.superMatchesCounter + 1
                 end
 
                 matchNum = 1
@@ -103,9 +154,22 @@ function Board:calculateMatches()
             -- go backwards from end of last row by matchNum
             for x = 8, 8 - matchNum + 1, -1 do
                 table.insert(match, self.tiles[y][x])
+                
+                if self.tiles[y][x].shiny then
+                    match = {}
+                    for x2 = 1, 8 do
+                        self.tiles[y][x2].frozen = true
+                        table.insert(match, self.tiles[y][x2])
+                    end
+                    break
+                end
             end
 
             table.insert(matches, match)
+        end
+                
+        if matchNum >= 4 then
+            self.superMatchesCounter = self.superMatchesCounter + 1
         end
     end
 
@@ -127,9 +191,21 @@ function Board:calculateMatches()
 
                     for y2 = y - 1, y - matchNum, -1 do
                         table.insert(match, self.tiles[y2][x])
+                        if self.tiles[y2][x].shiny then
+                        	match = {}
+                        	for y3 = 1, 8 do
+                        		self.tiles[y3][x].frozen = true
+                        		table.insert(match, self.tiles[y3][x])
+                        	end
+                        	break
+                        end
                     end
 
                     table.insert(matches, match)
+                end
+                
+                if matchNum >= 4 then
+                	self.superMatchesCounter = self.superMatchesCounter + 1
                 end
 
                 matchNum = 1
@@ -148,9 +224,22 @@ function Board:calculateMatches()
             -- go backwards from end of last row by matchNum
             for y = 8, 8 - matchNum + 1, -1 do
                 table.insert(match, self.tiles[y][x])
+                
+                if self.tiles[y][x].shiny then
+                    match = {}
+                    for y2 = 1, 8 do
+                        self.tiles[y2][x].frozen = true
+                        table.insert(match, self.tiles[y2][x])
+                    end
+                    break
+                end
             end
 
             table.insert(matches, match)
+        end
+                
+        if matchNum >= 4 then
+            self.superMatchesCounter = self.superMatchesCounter + 1
         end
     end
 
@@ -230,7 +319,11 @@ function Board:getFallingTiles()
             y = y - 1
         end
     end
-
+	
+	local sizeOfTweensNew = 0
+	-- new only tiles
+	local tweensNew = {}
+	      
     -- create replacement tiles at the top of the screen
     for x = 1, 8 do
         for y = 8, 1, -1 do
@@ -240,17 +333,35 @@ function Board:getFallingTiles()
             if not tile then
 
                 -- new tile with random color and variety
-                local tile = Tile(x, y, math.random(18), math.random(6))
+                local tile = generateTileAccordingLevel(x,y,self.colorSet,self.level)
+                
                 tile.y = -32
                 self.tiles[y][x] = tile
-
+                
                 -- create a new tween to return for this tile to fall down
-                tweens[tile] = {
+                tweensNew[tile] = {
                     y = (tile.gridY - 1) * 32
                 }
+                
+                sizeOfTweensNew = sizeOfTweensNew + 1
+                
             end
         end
     end
+	
+	local indexes = getRandomIndexes(self.superMatchesCounter,sizeOfTweensNew)
+	
+	tweensNew = makeShinyByIndexes(tweensNew,indexes)
+	
+	-- add tweenNew table to tween table
+	for k, tweenNew in pairs(tweensNew) do
+		tweens[k] = {
+        	y = tweenNew['y']
+        }
+	end
+    
+    -- reset counter
+    self.superMatchesCounter = 0
 
     return tweens
 end
@@ -258,7 +369,174 @@ end
 function Board:render()
     for y = 1, #self.tiles do
         for x = 1, #self.tiles[1] do
-            self.tiles[y][x]:render(self.x, self.y)
+            self.tiles[y][x]:render(self.x, self.y)    
+			-- particles
+			if self.tiles[y][x].shiny then
+				love.graphics.setColor(255, 255, 255, 180)
+				love.graphics.draw(psystem, self.x + self.tiles[y][x].x + 16, self.y + self.tiles[y][x].y + 16)
+			end
+			-- particles end
         end
     end
+end
+
+function generateTileAccordingLevel(x,y,colorSet,level)
+    return Tile(x, y, colorSet[math.random(#colorSet)], math.min(6,math.random(1 + math.floor(level/2))))
+end
+
+function getRandomIndexes(indexNum,maxValue)
+	local indexes = {}   
+	
+	-- randomly choose indexes of tiles from tweens table, must be unique of course 
+	if indexNum == 1 then
+		indexes[1] = math.random(maxValue)
+	elseif indexNum > 1 then		
+		for k = 1, indexNum do
+			while #indexes ~= k do
+				--create random index from 1 to number of elements in table tween
+				local index = math.random(maxValue)
+				
+				-- if we already have indexes in table indexes then check unique of variable index
+				if #indexes > 0 then
+					local unique = true
+					for k2 = 1, #indexes do
+						if index == indexes[k2] then
+							-- if we already have this random index - change bool var unique to false
+							unique = false
+						end
+					end
+					-- if index unique - add it to table
+					if unique then
+						indexes[k] = index
+					end
+				-- if shinyTilesIndexes == 0 - add index in table
+				else
+					indexes[k] = index
+				end
+			end
+		end
+	end
+	
+	return indexes
+end
+
+function makeShinyByIndexes(table,indexes)
+	if #indexes > 0 then
+		for k = 1, #indexes do
+			counter = 1
+			for key, row in pairs(table) do
+				if counter == indexes[k] then
+					key.shiny = true
+					break
+				else
+					counter = counter + 1
+				end
+			end
+		end
+	end
+	
+	return table
+end
+
+function createColorSet()
+	local colorSet = {}
+	local colors = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18}
+    local counter = 1
+    
+    while counter <= 8 do
+    	local randomIndex = math.random(#colors)
+    	colorSet[counter] = colors[randomIndex]
+    	table.remove(colors,randomIndex)
+    	counter = counter + 1
+    end
+    
+    return colorSet
+end
+
+function Board:isMatchesExist()
+	local matchExist = false
+	
+	for x = 1,8 do
+		if matchExist then break end
+		for y = 1,8 do
+			if matchExist then break end
+			if x <= 7 and y <= 6 then
+				if isTilesEquel(self.tiles, {x, y}, {x, y+1}, {x+1, y+2}) then
+					matchExist = {x+1, y+2}
+					break
+				elseif isTilesEquel(self.tiles, {x+1, y}, {x+1, y+1}, {x, y+2}) then
+					matchExist = {x, y+2}
+					break
+				elseif isTilesEquel(self.tiles, {x, y}, {x+1, y+1}, {x+1, y+2}) then
+					matchExist = {x, y}
+					break
+				elseif isTilesEquel(self.tiles, {x+1, y}, {x, y+1}, {x, y+2}) then
+					matchExist = {x+1, y}
+					break
+				elseif isTilesEquel(self.tiles, {x, y}, {x+1, y+1}, {x, y+2}) then
+					matchExist = {x+1, y+1}
+					break
+				elseif isTilesEquel(self.tiles, {x+1, y}, {x, y+1}, {x+1, y+2}) then
+					matchExist = {x, y+1}
+					break
+				end
+			end
+			if x <= 6 and y <= 7 then
+				if isTilesEquel(self.tiles, {x, y}, {x+1, y}, {x+2, y+1}) then
+					matchExist = {x+2, y+1}
+					break
+				elseif isTilesEquel(self.tiles, {x, y+1}, {x+1, y}, {x+2, y}) then
+					matchExist = {x, y+1}
+					break
+				elseif isTilesEquel(self.tiles, {x, y}, {x+1, y+1}, {x+2, y+1}) then
+					matchExist = {x, y}
+					break
+				elseif isTilesEquel(self.tiles, {x, y+1}, {x+1, y+1}, {x+2, y}) then
+					matchExist = {x+2, y}
+					break
+				elseif isTilesEquel(self.tiles, {x, y+1}, {x+1, y}, {x+2, y+1}) then
+					matchExist = {x+1, y}
+					break
+				elseif isTilesEquel(self.tiles, {x, y}, {x+1, y+1}, {x+2, y}) then
+					matchExist = {x+1, y+1}
+					break
+				end
+			end
+			if y <= 5 then
+				if isTilesEquel(self.tiles, {x, y}, {x, y+1}, {x, y+3}) then
+					matchExist = {x, y+3}
+					break
+				elseif isTilesEquel(self.tiles, {x, y}, {x, y+2}, {x, y+3}) then
+					matchExist = {x, y}
+					break
+				end
+			end
+			if x <= 5 then
+				if isTilesEquel(self.tiles, {x, y}, {x+1, y}, {x+3, y}) then
+					matchExist = {x+3, y}
+					break
+				elseif isTilesEquel(self.tiles, {x, y}, {x+2, y}, {x+3, y}) then
+					matchExist = {x, y}
+					break
+				end
+			end
+		end
+	end
+	
+	self.hint = matchExist
+	
+	if matchExist then
+		return true
+	else
+		return false
+	end
+end
+
+function isTilesEquel(tiles, tile1GridXY, tile2GridXY, tile3GridXY )
+	if tiles[tile1GridXY[2]][tile1GridXY[1]].color == tiles[tile2GridXY[2]][tile2GridXY[1]].color and
+		tiles[tile1GridXY[2]][tile1GridXY[1]].color == tiles[tile3GridXY[2]][tile3GridXY[1]].color then
+		return true
+	else
+		return false
+	end
 end

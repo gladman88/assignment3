@@ -44,8 +44,7 @@ VIRTUAL_HEIGHT = 288
 -- speed at which our background texture will scroll
 BACKGROUND_SCROLL_SPEED = 80
 
-function love.load()
-    
+function love.load()    
     -- window bar title
     love.window.setTitle('Match 3')
 
@@ -78,6 +77,9 @@ function love.load()
 
     -- initialize input table
     love.keyboard.keysPressed = {}
+    -- initialize mouse input table
+    love.mouse.buttonsPressed = {}
+    love.mouse.isMoved = false
 end
 
 function love.resize(w, h)
@@ -98,6 +100,25 @@ function love.keyboard.wasPressed(key)
     end
 end
 
+--[[
+    LÖVE2D callback fired each time a mouse button is pressed; gives us the
+    X and Y of the mouse, as well as the button in question.
+]]
+function love.mousepressed(x, y, button)
+    love.mouse.buttonsPressed[button] = true
+end
+
+function love.mousemoved (x, y, dx, dy, istouch )
+	love.mouse.isMoved = true
+end
+
+--[[
+    Equivalent to our keyboard function from before, but for the mouse buttons.
+]]
+function love.mouse.wasPressed(button)
+    return love.mouse.buttonsPressed[button]
+end
+
 function love.update(dt)
     
     -- scroll background, used across all states
@@ -111,6 +132,8 @@ function love.update(dt)
     gStateMachine:update(dt)
 
     love.keyboard.keysPressed = {}
+    love.mouse.buttonsPressed = {}
+    love.mouse.isMoved = false
 end
 
 function love.draw()
@@ -120,5 +143,28 @@ function love.draw()
     love.graphics.draw(gTextures['background'], backgroundX, 0)
     
     gStateMachine:render()
+    
+    -- display FPS for debugging; simply comment out to remove
+    displayFPS()
+	
     push:finish()
+end
+
+function addToLog(text,woLineBreak)
+	if not woLineBreak then
+    	love.filesystem.append('logs.txt', "\n"..text)
+    else
+    	love.filesystem.append('logs.txt', " "..text)
+    end
+end
+
+
+--[[
+    Renders the current FPS.
+]]
+function displayFPS()
+    -- simple FPS display across all states
+    love.graphics.setFont(gFonts['small'])
+    love.graphics.setColor(0, 255, 0, 255)
+    love.graphics.print('FPS: ' .. tostring(love.timer.getFPS()), 10, 10)
 end
